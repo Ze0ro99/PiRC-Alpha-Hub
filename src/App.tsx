@@ -11,6 +11,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Matrix } from "./components/Matrix";
 import { Contracts } from "./components/Contracts";
 import { Placeholder } from "./components/Placeholder";
+import { RepoSync } from "./components/RepoSync";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/sync" element={<RepoSync />} />
             <Route path="/matrix" element={<Matrix />} />
             <Route path="/contracts" element={<Contracts />} />
             <Route path="/explorer" element={<Placeholder title="Data Explorer" />} />

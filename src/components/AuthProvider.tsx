@@ -43,12 +43,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 1. Initialize Pi SDK as a Promise
       if (!isInitialized.current) {
-        await withTimeout(
-          window.Pi.init({ version: "2.0", sandbox: true }),
-          5000,
-          "Pi SDK initialization timed out. Please try again."
-        );
-        isInitialized.current = true;
+        try {
+          await withTimeout(
+            window.Pi.init({ version: "2.0", sandbox: true }),
+            3000,
+            "Pi SDK initialization timed out."
+          );
+          isInitialized.current = true;
+        } catch (e: any) {
+          console.warn(e.message);
+          if (process.env.NODE_ENV !== "production") {
+            console.log("Mocking Pi Network Auth for development environment.");
+            setUser({ uid: "demo_user_12345", username: "pi_demo_user" });
+            setLoading(false);
+            return;
+          }
+          throw new Error("Cannot connect to Pi Network. Please ensure you are running this app inside the Pi Browser.");
+        }
       }
 
       // 2. Define incomplete payment handler (required by Pi SDK but not used in auth scope)

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import {
@@ -11,12 +11,14 @@ import {
   Building2,
   CreditCard,
   LogOut,
-  Pi
+  Pi,
+  GitMerge
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Repository Sync", href: "/sync", icon: GitMerge },
   { name: "Matrix Registry", href: "/matrix", icon: Database },
   { name: "Contracts Hub", href: "/contracts", icon: FileCode2 },
   { name: "Data Explorer", href: "/explorer", icon: Search },

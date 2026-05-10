@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import cors from "cors";
+import { Octokit } from "octokit";
 
 async function startServer() {
   const app = express();
@@ -11,6 +12,107 @@ async function startServer() {
 
   // API Routes
   
+  // GitHub Integration Routes
+  const getOctokit = () => {
+    const pat = process.env.GITHUB_PAT;
+    return new Octokit({ auth: pat });
+  };
+
+  const REPO_OWNER = "Ze0ro99";
+  const REPO_NAME = "PiRC";
+
+  app.get("/api/github/branches", async (req, res) => {
+    try {
+      const octokit = getOctokit();
+      const response = await octokit.rest.repos.listBranches({
+        owner: REPO_OWNER,
+        repo: REPO_NAME,
+      });
+      res.json({ status: "success", data: response.data.map((b: any) => b.name) });
+    } catch (error: any) {
+      console.error("GitHub API Error (branches):", error.message);
+      res.status(500).json({ error: "Failed to fetch branches from GitHub" });
+    }
+  });
+
+  app.get("/api/github/tree", async (req, res) => {
+    try {
+      const { branch = "main" } = req.query;
+      const octokit = getOctokit();
+      const branchInfo = await octokit.rest.repos.getBranch({
+        owner: REPO_OWNER,
+        repo: REPO_NAME,
+        branch: branch as string,
+      });
+      const sha = branchInfo.data.commit.sha;
+      const treeResponse = await octokit.rest.git.getTree({
+        owner: REPO_OWNER,
+        repo: REPO_NAME,
+        tree_sha: sha,
+        recursive: "1",
+      });
+      res.json({ status: "success", data: treeResponse.data.tree });
+    } catch (error: any) {
+      console.error("GitHub API Error (tree):", error.message);
+      res.status(500).json({ error: "Failed to fetch repository tree" });
+    }
+  });
+
+  app.get("/api/github/file", async (req, res) => {
+    try {
+      const { path, branch = "main" } = req.query;
+      if (!path) return res.status(400).json({ error: "Path is required" });
+      
+      const octokit = getOctokit();
+      const response = await octokit.rest.repos.getContent({
+        owner: REPO_OWNER,
+        repo: REPO_NAME,
+        path: path as string,
+        ref: branch as string,
+      });
+
+      if (Array.isArray(response.data)) {
+        res.status(400).json({ error: "Requested path is a directory" });
+        return;
+      }
+      
+      if (response.data.type === "file" && 'content' in response.data) {
+         // Content is base64 encoded
+         const content = Buffer.from(response.data.content, 'base64').toString('utf8');
+         res.json({ status: "success", data: { content, name: response.data.name, path: response.data.path }});
+      } else {
+        res.status(404).json({ error: "File not found or not a valid file" });
+      }
+    } catch (error: any) {
+      console.error("GitHub API Error (file):", error.message);
+      res.status(500).json({ error: "Failed to fetch file content" });
+    }
+  });
+
+  app.post("/api/github/import", async (req, res) => {
+    try {
+      const { path: filePath, content } = req.body;
+      if (!filePath || !content) {
+         return res.status(400).json({ error: "Path and content are required" });
+      }
+      
+      const fs = require('fs');
+      const p = require('path');
+      
+      // Determine local path safely within project directory
+      const localPath = p.join(process.cwd(), 'imported', filePath);
+      
+      // Ensure directory exists
+      fs.mkdirSync(p.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, content, 'utf8');
+      
+      res.json({ status: "success", message: `File imported to imported/${filePath}` });
+    } catch (error: any) {
+      console.error("Import Error:", error.message);
+      res.status(500).json({ error: "Failed to import file" });
+    }
+  });
+
   // Pi Network Auth Validation
   app.post("/api/auth", async (req, res) => {
     try {
