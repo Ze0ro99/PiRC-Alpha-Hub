@@ -12,6 +12,7 @@ import { Matrix } from "./components/Matrix";
 import { Contracts } from "./components/Contracts";
 import { Placeholder } from "./components/Placeholder";
 import { RepoSync } from "./components/RepoSync";
+import { Subscriptions } from "./components/Subscriptions";
 
 export default function App() {
   return (
@@ -27,7 +28,7 @@ export default function App() {
             <Route path="/economics" element={<Placeholder title="Economics Simulator" />} />
             <Route path="/layers" element={<Placeholder title="7-Layer Visualizer" />} />
             <Route path="/rwa" element={<Placeholder title="Real World Assets" />} />
-            <Route path="/subscriptions" element={<Placeholder title="Subscriptions" />} />
+            <Route path="/subscriptions" element={<Subscriptions />} />
           </Routes>
         </Layout>
       </BrowserRouter>

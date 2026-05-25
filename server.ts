@@ -147,6 +147,150 @@ async function startServer() {
     }
   });
 
+  // Pi Network Payments Implementation
+  const PI_NETWORK_API_KEY = process.env.PI_NETWORK_API_KEY;
+
+  const callPiApi = async (method: string, endpoint: string, body?: any) => {
+    if (!PI_NETWORK_API_KEY) {
+      console.warn(`[Mock Pi API] PI_NETWORK_API_KEY is not set. Simulating response for ${method} ${endpoint}`);
+      
+      const paymentId = endpoint.split("/")[3] || "mock_payment_id";
+      
+      if (endpoint.endsWith("/approve")) {
+        return {
+          identifier: paymentId,
+          amount: body?.amount || 1.0,
+          memo: "Mock Approved Payment",
+          status: { developer_approved: true, developer_completed: false },
+          transaction: null,
+        };
+      } else if (endpoint.endsWith("/complete")) {
+        return {
+          identifier: paymentId,
+          amount: body?.amount || 1.0,
+          memo: "Mock Completed Payment",
+          status: { developer_approved: true, developer_completed: true },
+          transaction: { txid: body?.txid || "mock_txid_12345" },
+        };
+      } else {
+        // GET payment status
+        return {
+          identifier: paymentId,
+          amount: 1.0,
+          memo: "Mock Payment Status",
+          status: { developer_approved: true, developer_completed: false },
+          transaction: { txid: "mock_txid_12345" },
+        };
+      }
+    }
+
+    const response = await fetch(`https://api.minepi.com${endpoint}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Key ${PI_NETWORK_API_KEY}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Pi API error (${response.status}): ${text}`);
+    }
+    return await response.json();
+  };
+
+  // Check if Pi API key is configured
+  app.get("/api/payments/config", (req, res) => {
+    res.json({
+      configured: !!PI_NETWORK_API_KEY,
+    });
+  });
+
+  // Approve a payment (called by onReadyForServerApproval)
+  app.post("/api/payments/approve", async (req, res) => {
+    try {
+      const { paymentId } = req.body;
+      if (!paymentId) {
+        return res.status(400).json({ error: "paymentId is required" });
+      }
+
+      console.log(`Approving payment ${paymentId}...`);
+      const approvalResult = await callPiApi("POST", `/v2/payments/${paymentId}/approve`);
+      console.log(`Payment ${paymentId} approved successfully:`, approvalResult);
+      
+      res.json({ status: "success", data: approvalResult });
+    } catch (error: any) {
+      console.error(`Error approving payment:`, error.message);
+      res.status(500).json({ error: error.message || "Failed to approve payment" });
+    }
+  });
+
+  // Complete a payment (called by onReadyForServerCompletion)
+  app.post("/api/payments/complete", async (req, res) => {
+    try {
+      const { paymentId, txid } = req.body;
+      if (!paymentId || !txid) {
+        return res.status(400).json({ error: "paymentId and txid are required" });
+      }
+
+      console.log(`Completing payment ${paymentId} with txid ${txid}...`);
+      const completionResult = await callPiApi("POST", `/v2/payments/${paymentId}/complete`, { txid });
+      console.log(`Payment ${paymentId} completed successfully:`, completionResult);
+      
+      res.json({ status: "success", data: completionResult });
+    } catch (error: any) {
+      console.error(`Error completing payment:`, error.message);
+      res.status(500).json({ error: error.message || "Failed to complete payment" });
+    }
+  });
+
+  // Handle incomplete payments
+  app.post("/api/payments/incomplete", async (req, res) => {
+    try {
+      const { paymentId, txid } = req.body;
+      if (!paymentId) {
+        return res.status(400).json({ error: "paymentId is required" });
+      }
+
+      console.log(`Processing incomplete payment ${paymentId}...`);
+      
+      // Fetch current status from Pi Network
+      const paymentInfo = await callPiApi("GET", `/v2/payments/${paymentId}`);
+      console.log(`Incomplete payment status retrieved:`, paymentInfo);
+      
+      let result = { action: "none", data: paymentInfo };
+      
+      // If not approved, approve it
+      if (!paymentInfo.status?.developer_approved) {
+        console.log(`Incomplete payment ${paymentId} is not approved. Approving...`);
+        const approveData = await callPiApi("POST", `/v2/payments/${paymentId}/approve`);
+        result = { action: "approved", data: approveData };
+      } 
+      // If approved but not completed
+      else if (!paymentInfo.status?.developer_completed) {
+        // We need a txid to complete. Let's find it.
+        const actualTxid = txid || paymentInfo.transaction?.txid;
+        if (actualTxid) {
+          console.log(`Incomplete payment ${paymentId} is approved but not completed. Completing with txid ${actualTxid}...`);
+          const completeData = await callPiApi("POST", `/v2/payments/${paymentId}/complete`, { txid: actualTxid });
+          result = { action: "completed", data: completeData };
+        } else {
+          console.log(`Incomplete payment ${paymentId} is approved but lacks transaction ID. Cannot complete yet.`);
+          result = { action: "pending_transaction", data: paymentInfo };
+        }
+      } else {
+        console.log(`Incomplete payment ${paymentId} is already fully approved and completed.`);
+        result = { action: "already_completed", data: paymentInfo };
+      }
+
+      res.json({ status: "success", ...result });
+    } catch (error: any) {
+      console.error(`Error processing incomplete payment:`, error.message);
+      res.status(500).json({ error: error.message || "Failed to process incomplete payment" });
+    }
+  });
+
   // Mock PiRC Matrix API
   app.get("/api/pirc_matrix", (req, res) => {
     res.json({
