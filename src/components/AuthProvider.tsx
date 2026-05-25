@@ -9,6 +9,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
+  isPiReady: boolean;
   signIn: () => Promise<void>;
   signOut: () => void;
 }
@@ -23,6 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPiReady, setIsPiReady] = useState(false);
   const isInitialized = useRef(false);
 
   const authenticateWithPi = async (isAutoAttempt: boolean = false) => {
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (process.env.NODE_ENV !== "production") {
           console.log("Pi SDK is not loaded. Mocking Pi Network Auth for development/sandbox environment.");
           setUser({ uid: "demo_user_12345", username: "pi_demo_user" });
+          setIsPiReady(true);
           setLoading(false);
           return;
         }
@@ -45,11 +48,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           await window.Pi.init({ version: "2.0", sandbox: true });
           isInitialized.current = true;
+          setIsPiReady(true);
         } catch (e: any) {
           console.warn("Pi.init error:", e.message || e);
           if (process.env.NODE_ENV !== "production") {
             console.log("Mocking Pi Network Auth for development/sandbox environment.");
             setUser({ uid: "demo_user_12345", username: "pi_demo_user" });
+            setIsPiReady(true);
             setLoading(false);
             return;
           }
@@ -57,14 +62,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Define incomplete payment handler (required by Pi SDK but not used in auth scope)
-      const onIncompletePaymentFound = (payment: any) => {
+      // 2. Define incomplete payment handler (required by Pi SDK to complete in-flight payments)
+      const onIncompletePaymentFound = async (payment: any) => {
         console.log("Incomplete payment found:", payment);
+        try {
+          const response = await fetch(`${API_BASE}/api/payments/incomplete`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              paymentId: payment.identifier,
+              txid: payment.transaction?.txid,
+            }),
+          });
+          const data = await response.json();
+          console.log("Incomplete payment automatically resolved on login:", data);
+        } catch (err: any) {
+          console.error("Failed to complete in-flight payment:", err.message || err);
+        }
       };
 
-      // 3. Authenticate with "username" scope
-      // Request scope "username" to access the user's Pi username.
-      const auth: any = await window.Pi.authenticate(["username"], onIncompletePaymentFound);
+      // 3. Authenticate with "username" and "payments" scope
+      const auth: any = await window.Pi.authenticate(["username", "payments"], onIncompletePaymentFound);
 
       // 4. Send the returned access token to the backend, which must validate it
       const authResponse = await fetch(`${API_BASE}/api/auth`, {
@@ -118,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, error, isPiReady, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
